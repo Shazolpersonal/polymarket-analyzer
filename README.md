@@ -27,7 +27,7 @@ Five-factor score (0–100):
 | Factor | Weight | Logic |
 |--------|--------|-------|
 | **Profit Magnitude** | 40 pts | Logarithmic scale: $5K ≈ 10pts, $50K ≈ 30pts, $500K+ ≈ 40pts |
-| **Win Rate** | 25 pts | Adjusted for sample size — need 20+ markets for full weight |
+| **Win Rate** | 25 pts | Adjusted for sample size — need 30+ markets for full weight |
 | **Trading Volume** | 15 pts | Sweet spot: 20–200 markets. Penalizes likely bots (500+) |
 | **Recency** | 10 pts | ≤7 days = full points, decays over 30/90 days |
 | **Position Conviction** | 10 pts | Current position size relative to their average bet size |
@@ -37,9 +37,9 @@ Five-factor score (0–100):
 ## Signal Generation
 
 - Top 20 holders by score are analyzed
-- YES vs NO split computed by position value (not just count)
-- **BUY YES**: ≥65% in YES by value AND confidence ≥ 5
-- **BUY NO**: ≤35% in YES by value AND confidence ≥ 5
+- YES vs NO split computed by **credibility-weighted position value** (position size × score/100)
+- **BUY YES**: ≥65% in YES by weighted value AND confidence ≥ 5
+- **BUY NO**: ≤35% in YES by weighted value AND confidence ≥ 5
 - **INCONCLUSIVE**: divided or insufficient data
 - **Whale Detection**: if a single holder controls >40% of total analyzed value → confidence is reduced by 3 points
 
@@ -111,19 +111,39 @@ src/
     └── ScoreBreakdown.tsx     # Per-factor score visualization
 ```
 
-## Known Limitations
+## Known Limitations & Design Decisions
 
-- **Holder data capped at 20 per token** — Polymarket Data API limits `/holders` to 20 results per request
-- **Profile enrichment is serial-batched** — fetching each holder's full history takes 5–15 seconds total
-- **Position sizes from API are share counts** — not always directly convertible to USD without price context
-- **Multi-market events** — for events with many sub-markets, only the first (or URL-matched) market is analyzed
-- **In-memory cache** — resets on server restart; not suitable for production scale
+### Data Constraints
+
+- **Holder data capped at 20 per token** — The Polymarket Data API returns at most 20 holders per `/holders` request. A market may have thousands of holders, so our "smart money" analysis is based only on the visible top holders, not the full population. This means some significant wallets may be missed.
+
+- **Win rate based on 50 most recent positions** — We fetch up to 50 positions per holder (sorted chronologically). A trader with 500+ positions will only have their most recent 50 analyzed. Win rate is discounted by a sample-size factor (`min(1, markets/30)`) to account for this, but it remains an approximation. The app displays a warning when profile data is limited.
+
+- **Position sizes are converted to dollar estimates** — Raw API data provides share counts, which we multiply by the current market price (`shares × outcomePrices[i]`) to get dollar values. These are point-in-time estimates — the actual cost basis of each position may differ from the current price.
+
+- **Multi-market events** — For events with multiple sub-markets (e.g., "Who will win the 2028 election?" with many candidates), only the URL-matched market (or the first market) is analyzed.
+
+### Design Decisions & Trade-offs
+
+| Decision | Why | Trade-off |
+|----------|-----|-----------|
+| **$5,000 profit threshold** | Filters out noise from small/casual traders to focus on proven wallets | May exclude skilled traders with small capital |
+| **Credibility-weighted signal** | A high-score trader's $1K position counts more than a low-score trader's $1K | Could over-discount newer but skilled traders |
+| **Logarithmic profit scoring** | Prevents mega-whales from dominating purely by capital size | A $500K wallet scores ~4x a $5K wallet, not 100x |
+| **Whale detection penalty** | A single holder with >40% of total value triggers confidence reduction | May be too aggressive for markets with few large holders |
+| **In-memory cache** | Simple, no external dependencies. Market data cached 30mins, prices 2mins | Resets on restart; mostly ineffective on serverless (Vercel) |
+
+### What This Tool Cannot Guarantee
+
+This tool analyzes historical performance of current holders to generate a _directional signal_. It is **not** a prediction of market outcomes. Smart money can be wrong, market conditions change, and past performance does not guarantee future results. The tool is best used as one data point among many, not as sole trading guidance.
 
 ## Future Improvements
 
-- Category expertise scoring (a wallet's track record in political vs sports markets)
-- Historical signal backtesting
-- Redis/persistent cache for production
-- WebSocket for live price updates
-- Portfolio-level analysis (multiple markets at once)
-- Export analysis as PDF/image
+- **Broader holder coverage** — Paginated API calls to fetch more than 20 holders per token
+- **Full position history** — Fetch all positions (not just 50) for more accurate win rates
+- **Category expertise scoring** — Track if a wallet specializes in political vs sports markets
+- **Historical signal backtesting** — Test past signals against actual outcomes
+- **Redis/persistent cache** — Replace in-memory cache for production deployments
+- **WebSocket live prices** — Real-time price updates instead of on-demand
+- **Portfolio-level analysis** — Analyze multiple markets simultaneously
+- **Export analysis** — Save results as PDF or shareable image

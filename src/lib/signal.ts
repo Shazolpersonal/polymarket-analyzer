@@ -27,10 +27,19 @@ export function generateTradingSignal(topHolders: ScoredHolder[]): TradingSignal
     const yesList = topHolders.filter((h) => h.currentPosition === 'YES');
     const noList = topHolders.filter((h) => h.currentPosition === 'NO');
 
-    // ── Weight by position size (dollar value) ────────────────────────────────
-    const yesValue = yesList.reduce((sum, h) => sum + h.currentPositionSize, 0);
-    const noValue = noList.reduce((sum, h) => sum + h.currentPositionSize, 0);
+    // ── Weight by position size × credibility score ───────────────────────────
+    //    A $1000 position from an 80-score holder counts as $800 effective weight.
+    //    This ensures high-quality traders have proportionally more influence.
+    const weightedValue = (h: ScoredHolder) =>
+        h.currentPositionSize * (h.credibilityScore.total / 100);
+
+    const yesValue = yesList.reduce((sum, h) => sum + weightedValue(h), 0);
+    const noValue = noList.reduce((sum, h) => sum + weightedValue(h), 0);
     const totalValue = yesValue + noValue;
+
+    // Also track raw (unweighted) values for display
+    const yesValueRaw = yesList.reduce((sum, h) => sum + h.currentPositionSize, 0);
+    const noValueRaw = noList.reduce((sum, h) => sum + h.currentPositionSize, 0);
 
     // Avoid division by zero
     if (totalValue === 0) {
@@ -46,7 +55,7 @@ export function generateTradingSignal(topHolders: ScoredHolder[]): TradingSignal
 
     // ── Whale detection ───────────────────────────────────────────────────────
     const whaleThreshold = totalValue * 0.4;
-    const whale = topHolders.find((h) => h.currentPositionSize > whaleThreshold);
+    const whale = topHolders.find((h) => weightedValue(h) > whaleThreshold);
 
     // ── Confidence calculation ────────────────────────────────────────────────
     //    Based on how lopsided the distribution is
@@ -89,11 +98,11 @@ export function generateTradingSignal(topHolders: ScoredHolder[]): TradingSignal
     let reasoning = '';
 
     reasoning += `${yesList.length} of ${topHolders.length} top holders `;
-    reasoning += `(${Math.round(yesPercentage * 100)}% by value) are in YES, `;
-    reasoning += `with $${formatDollars(yesValue)} in YES positions vs $${formatDollars(noValue)} in NO positions. `;
+    reasoning += `(${Math.round(yesPercentage * 100)}% by credibility-weighted value) are in YES, `;
+    reasoning += `with $${formatDollars(yesValueRaw)} in YES positions vs $${formatDollars(noValueRaw)} in NO positions. `;
 
     if (whale) {
-        const whalePct = Math.round((whale.currentPositionSize / totalValue) * 100);
+        const whalePct = Math.round((weightedValue(whale) / totalValue) * 100);
         reasoning += `⚠️ Whale Alert: One holder controls ${whalePct}% of analyzed value — confidence reduced. `;
     }
 
@@ -125,8 +134,8 @@ export function generateTradingSignal(topHolders: ScoredHolder[]): TradingSignal
         data: {
             yesHolders: yesList.length,
             noHolders: noList.length,
-            yesValue: Math.round(yesValue * 100) / 100,
-            noValue: Math.round(noValue * 100) / 100,
+            yesValue: Math.round(yesValueRaw * 100) / 100,
+            noValue: Math.round(noValueRaw * 100) / 100,
             yesPercentage: Math.round(yesPercentage * 1000) / 1000,
             whaleDetected: !!whale,
             topHolders: holderSummaries,

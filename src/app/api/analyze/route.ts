@@ -10,6 +10,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeMarket } from '@/lib/analyze';
 
+// Vercel serverless config: allow up to 30s for this endpoint
+// (default is 10s which is too tight for 60+ external API calls)
+export const maxDuration = 30;
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();

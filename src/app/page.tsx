@@ -18,11 +18,18 @@ export default function Home() {
     setResult(null);
 
     try {
+      // 25s client-side timeout — if the server doesn't respond, show a clear message
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25_000);
+
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout);
 
       const data = await response.json();
 
@@ -32,7 +39,13 @@ export default function Home() {
 
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Analysis timed out. The server is taking too long — this may happen with very large markets. Please try again.');
+      } else if (err instanceof TypeError && (err.message === 'Failed to fetch' || err.message === 'NetworkError when attempting to fetch resource.')) {
+        setError('Could not connect to the analysis server. Please check your connection and try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }
@@ -101,6 +114,24 @@ export default function Home() {
           <div className="mt-10 space-y-6">
             <MarketHeader market={result.market} />
             <SignalCard signal={result.signal} />
+
+            {/* Data quality warnings */}
+            {result.warnings && result.warnings.length > 0 && (
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 backdrop-blur">
+                <div className="flex items-start gap-3">
+                  <span className="text-amber-400 text-lg">ℹ️</span>
+                  <div>
+                    <p className="font-medium text-amber-300 text-sm">Data Quality Notes</p>
+                    <ul className="mt-1 space-y-1">
+                      {result.warnings.map((warning, i) => (
+                        <li key={i} className="text-amber-400/80 text-sm">• {warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {result.signal.data && (
               <HolderTable
                 holders={result.signal.data.topHolders}

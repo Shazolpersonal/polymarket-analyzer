@@ -26,7 +26,7 @@ const DATA_API = 'https://data-api.polymarket.com';
 const CLOB_API = 'https://clob.polymarket.com';
 
 // Axios defaults
-const api = axios.create({ timeout: 15_000 });
+const api = axios.create({ timeout: 10_000 });
 
 // ─── Gamma API ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +77,13 @@ export function parseMarket(raw: GammaMarket): MarketInfo {
     try { outcomePrices = JSON.parse(raw.outcomePrices).map(Number); } catch { /* keep default */ }
     try { clobTokenIds = JSON.parse(raw.clobTokenIds); } catch { /* keep default */ }
 
+    // Build token→outcome map using the 1:1 index mapping from Polymarket API:
+    // outcomes[i] corresponds to clobTokenIds[i]
+    const outcomeForToken: Record<string, string> = {};
+    for (let i = 0; i < Math.min(outcomes.length, clobTokenIds.length); i++) {
+        outcomeForToken[clobTokenIds[i]] = outcomes[i];
+    }
+
     return {
         id: raw.id,
         question: raw.question,
@@ -85,6 +92,7 @@ export function parseMarket(raw: GammaMarket): MarketInfo {
         outcomes,
         outcomePrices,
         clobTokenIds,
+        outcomeForToken,
         volume: parseFloat(raw.volume) || 0,
         liquidity: parseFloat(raw.liquidity) || 0,
         active: raw.active,
@@ -139,7 +147,7 @@ export async function fetchUserPositions(
         const { data } = await api.get(`${DATA_API}/positions`, {
             params: {
                 user: userAddress,
-                sortBy: 'CASHPNL',
+                sortBy: 'CURRENT',
                 sortDirection: 'DESC',
                 limit,
                 sizeThreshold: 0,
@@ -200,9 +208,19 @@ export async function fetchUserLeaderboard(
         if (entries.length === 0) return null;
 
         const entry = entries[0];
+
+        // CRITICAL: Validate that the returned entry is actually for this user.
+        // The Polymarket v1/leaderboard API may ignore userAddress and return
+        // the global #1 trader instead. Check the proxyWallet matches.
+        const returnedWallet = (entry.proxyWallet || '').toLowerCase();
+        if (returnedWallet && returnedWallet !== userAddress.toLowerCase()) {
+            // API returned data for a different user — discard it
+            return null;
+        }
+
         const result = {
             pnl: parseFloat(entry.pnl ?? entry.profit ?? 0),
-            volume: parseFloat(entry.volume ?? 0),
+            volume: parseFloat(entry.vol ?? entry.volume ?? 0),
             marketsTraded: parseInt(entry.marketsTraded ?? entry.markets ?? 0, 10),
         };
         cache.set(cacheKey, result, CACHE_TTL.USER_PROFILE);

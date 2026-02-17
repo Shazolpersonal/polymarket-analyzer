@@ -71,13 +71,14 @@ export interface Holder {
     totalVolume: number;
     totalMarkets: number;
     winRate: number;
+    positionsSampled: number;  // How many positions were used for win rate calc
     lastTradeDate: Date;
     avgPositionSize: number;
 
     // For THIS specific market:
     currentPosition: 'YES' | 'NO';
-    currentPositionSize: number;
-    shares: number;
+    currentPositionSize: number;  // Dollar value (shares × price)
+    shares: number;               // Raw share count
 }
 
 export interface ScoreBreakdown {
@@ -134,6 +135,8 @@ export interface MarketInfo {
     outcomes: string[];
     outcomePrices: number[];
     clobTokenIds: string[];
+    /** Maps each clobTokenId to its outcome name (e.g. "Yes" or "No") */
+    outcomeForToken: Record<string, string>;
     volume: number;
     liquidity: number;
     active: boolean;
@@ -144,6 +147,8 @@ export interface MarketInfo {
 export interface AnalysisResult {
     market: MarketInfo;
     signal: TradingSignal;
+    /** Data quality warnings collected during analysis */
+    warnings: string[];
 }
 
 export interface AnalysisError {

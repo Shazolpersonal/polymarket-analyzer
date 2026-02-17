@@ -63,12 +63,12 @@ function calcProfitScore(totalProfit: number): number {
 /**
  * Win Rate (0–25 pts)
  * winRate ∈ [0, 100] → normalized to [0, 1], scaled by sample weight.
- * sampleWeight = min(1, totalMarkets / 20)
- * This means a wallet with < 20 markets has its win-rate score discounted.
+ * sampleWeight = min(1, totalMarkets / 30)
+ * This means a wallet with < 30 markets has its win-rate score discounted.
  */
 function calcWinRateScore(winRate: number, totalMarkets: number): number {
     if (totalMarkets === 0) return 0;
-    const sampleWeight = Math.min(1, totalMarkets / 20);
+    const sampleWeight = Math.min(1, totalMarkets / 30);
     const raw = (winRate / 100) * 25 * sampleWeight;
     return Math.round(Math.max(0, raw) * 100) / 100;
 }
